@@ -3,8 +3,7 @@ Refer to `ryu/ryu/app/routingPkt.py` and `ryu/ryu/app/igmpRouting.py` for the ro
 To start the ryu controller with the above application use from the ryu directory:
 
 ```bash
-PYTHONPATH=. ./bin/ryu-manager ryu/app/routingApp.py --observe-links
-PYTHONPATH=. ./bin/ryu-manager ryu/app/igmpRouting.py --observe-links
+ryu-manager video_multicast_app/igmpRouting.py --observe-links
 ```
 
 TODO: Need to integrate the l3 code with the above apps.
