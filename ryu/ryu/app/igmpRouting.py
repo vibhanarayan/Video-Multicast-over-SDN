@@ -22,18 +22,29 @@ from ryu.ofproto import ofproto_v1_3
 from ryu.lib import igmplib
 from ryu.lib.dpid import str_to_dpid
 from ryu.lib.packet import packet
-from ryu.lib.packet import ethernet
-from ryu.app import routingPkt
+from ryu.lib.packet import ethernet, arp, ipv4, igmp, udp
+from ryu.lib.packet import ether_types
+from ryu.lib import ip
+from ryu.app import shortestRouting
 import networkx as nx
 
+ETHERNET = ethernet.ethernet.__name__
+ARP = arp.arp.__name__
+IPV4 = ipv4.ipv4.__name__
 
-class IgmpRouting(routingPkt.RoutingPkt):
+class Entry (object):
+    def __init__ (self, port, mac):
+        self.port = port
+        self.mac = mac
+
+class IgmpRouting(shortestRouting.ShortestRouting):
     OFP_VERSIONS = [ofproto_v1_3.OFP_VERSION]
     _CONTEXTS = {'igmplib': igmplib.IgmpLib}
 
     def __init__(self, *args, **kwargs):
         super(IgmpRouting, self).__init__(*args, **kwargs)
         self.mac_to_port = {}
+        self.ip_to_mac = {}
         self._snoop = kwargs['igmplib']
         self._snoop.set_querier_mode(
             dpid=str_to_dpid('0000000000000001'), server_port=2)
@@ -49,22 +60,44 @@ class IgmpRouting(routingPkt.RoutingPkt):
         pkt = packet.Packet(msg.data)
         eth = pkt.get_protocols(ethernet.ethernet)[0]
 
+        if eth.ethertype == ether_types.ETH_TYPE_LLDP:
+            # ignore lldp packet
+            return
+
         dst = eth.dst
         src = eth.src
         dpid = datapath.id
         self.mac_to_port.setdefault(dpid, {})
 
-        #self.logger.info("packet in %s %s %s %s", dpid, src, dst, in_port)
+        #header_list =dict((p.protocol_name, p) for p in pkt)
+        header_list = []
+        arpPkt = pkt.get_protocol(arp.arp)
+        ip_pkt = pkt.get_protocol(ipv4.ipv4)
+        if arpPkt is not None:
+            header_list.append(ARP)
+            ip_src = arpPkt.src_ip
+            ip_dst = arpPkt.dst_ip
+        elif ip_pkt is not None:
+            header_list.append(IPV4)
+            ip_src = ip_pkt.src
+            ip_dst = ip_pkt.dst
 
+        self.logger.info("packet in %s %s %s %s", dpid, src, dst, in_port)
         # learn a mac address to avoid FLOOD next time.
         self.mac_to_port[dpid][src] = in_port
-        if src not in self.net:
-            self.net.add_node(src)
-            self.net.add_edge(dpid, src, {'port':in_port})
-            self.net.add_edge(src, dpid)
 
-        if dst in self.net:
-            path = nx.shortest_path(self.net,src,dst)
+        self.ip_to_mac.setdefault(dpid, {})
+        if ip_src not in self.ip_to_mac[dpid]:
+            self.ip_to_mac[dpid][ip_src] = Entry(in_port, src)
+
+        if ip_src not in self.net:
+            self.net.add_node(ip_src)
+            self.net.add_edge(dpid, ip_src, {'port':in_port})
+            self.net.add_edge(ip_src, dpid)
+
+        if ip_dst in self.net:
+            #find the unweighted shortest path i.e. minimum hop path
+            path = nx.shortest_path(self.net,ip_src,ip_dst)
             next = path[path.index(dpid) + 1]
             out_port = self.net[dpid][next]['port']
         else:
@@ -72,18 +105,12 @@ class IgmpRouting(routingPkt.RoutingPkt):
 
         actions = [parser.OFPActionOutput(out_port)]
 
-        """
-        if dst in self.mac_to_port[dpid]:
-            out_port = self.mac_to_port[dpid][dst]
-        else:
-            out_port = ofproto.OFPP_FLOOD
-
-        actions = [parser.OFPActionOutput(out_port)]
-        """
-
-        # install a flow to avoid packet_in next time
         if out_port != ofproto.OFPP_FLOOD:
-            match = parser.OFPMatch(in_port=in_port, eth_dst=dst)
+            #add flow basd on the IP address
+            if ARP in header_list:
+                match = parser.OFPMatch(in_port=in_port, eth_dst=dst, arp_spa=ip_src, arp_tpa=ip_dst, eth_type=0x0800)
+            elif IPV4 in header_list:
+                match = parser.OFPMatch(in_port=in_port, eth_dst=dst, ipv4_src=ip_src, ipv4_dst=ip_dst, eth_type=0x0800)
             self.add_flow(datapath, 1, match, actions)
 
         data = None
@@ -93,6 +120,7 @@ class IgmpRouting(routingPkt.RoutingPkt):
         out = parser.OFPPacketOut(datapath=datapath, buffer_id=msg.buffer_id,
                                   in_port=in_port, actions=actions, data=data)
         datapath.send_msg(out)
+
 
     @set_ev_cls(igmplib.EventMulticastGroupStateChanged,
                 MAIN_DISPATCHER)

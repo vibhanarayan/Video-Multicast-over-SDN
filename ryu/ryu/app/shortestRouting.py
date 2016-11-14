@@ -2,25 +2,37 @@ from ryu.base import app_manager
 from ryu.controller import ofp_event
 from ryu.controller.handler import CONFIG_DISPATCHER, MAIN_DISPATCHER
 from ryu.controller.handler import set_ev_cls
-from ryu.ofproto import ofproto_v1_3
+from ryu.ofproto import ofproto_v1_3, ofproto_v1_0
 from ryu.lib.packet import packet
-from ryu.lib.packet import ethernet
+from ryu.lib.packet import ethernet, arp, ipv4
 from ryu.lib.packet import ether_types
+from ryu.lib import ip
 from ryu.topology import event, switches
 from ryu.topology.api import get_link, get_switch, get_host
 from ryu.app.wsgi import ControllerBase
 from ryu.lib.mac import haddr_to_bin
 import networkx as nx
 
+ETHERNET = ethernet.ethernet.__name__
+ARP = arp.arp.__name__
+IPV4 = ipv4.ipv4.__name__
 
-class RoutingPkt(app_manager.RyuApp):
+
+class Entry (object):
+    def __init__ (self, port, mac):
+        self.port = port
+        self.mac = mac
+
+
+class ShortestRouting(app_manager.RyuApp):
     OFP_VERSIONS = [ofproto_v1_3.OFP_VERSION]
 
     def __init__(self, *args, **kwargs):
-        super(RoutingPkt, self).__init__(*args, **kwargs)
+        super(ShortestRouting, self).__init__(*args, **kwargs)
         self.mac_to_port = {}
         self.topology_api_app = self
         self.net = nx.DiGraph()
+        self.ip_to_mac = {}
 
     @set_ev_cls(ofp_event.EventOFPSwitchFeatures, CONFIG_DISPATCHER)
     def switch_features_handler(self, ev):
@@ -59,35 +71,58 @@ class RoutingPkt(app_manager.RyuApp):
         pkt = packet.Packet(msg.data)
         eth = pkt.get_protocols(ethernet.ethernet)[0]
 
+        if eth.ethertype == ether_types.ETH_TYPE_LLDP:
+            # ignore lldp packet
+            return
+
         dst = eth.dst
         src = eth.src
         dpid = datapath.id
         self.mac_to_port.setdefault(dpid, {})
 
-        #self.logger.info("packet in %s %s %s %s", dpid, src, dst, in_port)
+        #header_list =dict((p.protocol_name, p) for p in pkt)
+        header_list = []
+        arpPkt = pkt.get_protocol(arp.arp)
+        ip_pkt = pkt.get_protocol(ipv4.ipv4)
+        if arpPkt is not None:
+            header_list.append(ARP)
+            ip_src = arpPkt.src_ip
+            ip_dst = arpPkt.dst_ip
+        elif ip_pkt is not None:
+            header_list.append(IPV4)
+            ip_src = ip_pkt.src
+            ip_dst = ip_pkt.dst
+
+        self.logger.info("packet in %s %s %s %s", dpid, src, dst, in_port)
         # learn a mac address to avoid FLOOD next time.
         self.mac_to_port[dpid][src] = in_port
 
-        if src not in self.net:
-            self.net.add_node(src)
-            self.net.add_edge(dpid, src, {'port':in_port})
-            self.net.add_edge(src, dpid)
+        self.ip_to_mac.setdefault(dpid, {})
+        if ip_src not in self.ip_to_mac[dpid]:
+            self.ip_to_mac[dpid][ip_src] = Entry(in_port, src)
 
-        if dst in self.net:
-            #print "dst present", src, dst
-            path = nx.shortest_path(self.net,src,dst)
-            #print "path "
+        if ip_src not in self.net:
+            self.net.add_node(ip_src)
+            self.net.add_edge(dpid, ip_src, {'port':in_port})
+            self.net.add_edge(ip_src, dpid)
+
+        if ip_dst in self.net:
+            #find the unweighted shortest path i.e. minimum hop path
+            path = nx.shortest_path(self.net,ip_src,ip_dst)
             next = path[path.index(dpid) + 1]
             out_port = self.net[dpid][next]['port']
-            #print "in port ", in_port
-            #print "out port ", out_port
         else:
             out_port = ofproto.OFPP_FLOOD
+
 
         actions = [parser.OFPActionOutput(out_port)]
 
         if out_port != ofproto.OFPP_FLOOD:
-            match = parser.OFPMatch(in_port=in_port, eth_dst=dst)
+            #add flow basd on the IP address
+            if ARP in header_list:
+                match = parser.OFPMatch(in_port=in_port, eth_dst=dst, arp_spa=ip_src, arp_tpa=ip_dst, eth_type=0x0800)
+            elif IPV4 in header_list:
+                match = parser.OFPMatch(in_port=in_port, eth_dst=dst, ipv4_src=ip_src, ipv4_dst=ip_dst, eth_type=0x0800)
             self.add_flow(datapath, 1, match, actions)
 
         data = None
