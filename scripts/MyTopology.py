@@ -10,6 +10,8 @@ from mininet.cli  import CLI
 def main():
     topo = TreeTopo(3,2)
     #topo = TorusTopo(3,3)
+    #controller=RemoteController('c0', ip='10.10.10.10', port=6633)
+    #net = Mininet(topo=topo, controller=controller, switch=OVSSwitch)
     net = Mininet(topo=topo, controller=RemoteController, switch=OVSSwitch)
     net.start()
     print "Dumping host connections"

@@ -73,6 +73,8 @@ class IgmpRouting(shortestRouting.ShortestRouting):
         header_list = []
         arpPkt = pkt.get_protocol(arp.arp)
         ip_pkt = pkt.get_protocol(ipv4.ipv4)
+        #print type(msg.data), msg.data
+        print pkt.protocols[-1]
         if arpPkt is not None:
             header_list.append(ARP)
             ip_src = arpPkt.src_ip
