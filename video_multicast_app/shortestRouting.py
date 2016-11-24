@@ -79,7 +79,6 @@ class ShortestRouting(app_manager.RyuApp):
             # ignore lldp packet
             return
 
-        print "Packet", pkt
         dst = eth.dst
         src = eth.src
         dpid = datapath.id
@@ -101,7 +100,7 @@ class ShortestRouting(app_manager.RyuApp):
             ip_src = ip_pkt.src
             ip_dst = ip_pkt.dst
 
-        self.logger.info("packet in %s %s %s %s", dpid, src, dst, in_port)
+        #self.logger.info("packet in %s %s %s %s", dpid, src, dst, in_port)
         # learn a mac address to avoid FLOOD next time.
         self.mac_to_port[dpid][src] = in_port
 
@@ -137,7 +136,7 @@ class ShortestRouting(app_manager.RyuApp):
             arpreply.serialize()
             data = arpreply.data
 
-            print "ARP reply", arpreply
+            #print "ARP reply", arpreply
             out_port = in_port
             actions = [parser.OFPActionOutput(out_port)]
             match = parser.OFPMatch(in_port=ofproto.OFPP_CONTROLLER, eth_dst=eth.src, ipv4_src=CONTROLLER_IP, ipv4_dst=arpPkt.src_ip, eth_type=0x0800)
@@ -148,11 +147,11 @@ class ShortestRouting(app_manager.RyuApp):
             datapath.send_msg(out)
 
         elif udp_pkt and ip_pkt.dst == CONTROLLER_IP:
-            print "UDP ", udp_pkt
+            #print "UDP ", udp_pkt
             if udp_pkt.dst_port == 8000:
                 video_id = pkt.protocols[-1]
                 mcip = self.mcip_obj.assign_mcip(video_id, ip_pkt.src)
-                print "MCIP", self.mcip_obj.mapping, self.mcip_obj.mapping[video_id][0][0]
+                #print "MCIP", self.mcip_obj.mapping, self.mcip_obj.mapping[video_id][0][0]
 
                 reply = packet.Packet()
                 reply.add_protocol(ethernet.ethernet(dst=eth.src,
@@ -165,7 +164,7 @@ class ShortestRouting(app_manager.RyuApp):
                 reply.add_protocol(udp.udp(dst_port=8000, src_port=8000))
                 reply.add_protocol(str(mcip))
                 reply.serialize()
-                print "Reply", reply
+                #print "Reply", reply
                 reply.buffer_id = ofproto.OFP_NO_BUFFER
                 data = reply.data
 
@@ -176,18 +175,18 @@ class ShortestRouting(app_manager.RyuApp):
 
             elif udp_pkt.dst_port == 8001:
                 video_id = pkt.protocols[-1]
-                print "MCIP", video_id, self.mcip_obj.mapping, self.mcip_obj.mapping[video_id][0][0]
+                #print "MCIP", video_id, self.mcip_obj.mapping, self.mcip_obj.mapping[video_id][0][0]
                 mcip = self.mcip_obj.get_mcip(video_id)
-                print mcip, type(mcip)
+                #print mcip, type(mcip)
 
                 hop_num = 100
                 best_mcip = ''
                 out_ip = ''
-                print "nodes in set ", self.net.nodes()
+                #print "nodes in set ", self.net.nodes()
                 for p in mcip:
                     if p[1] in self.net:
                         path = nx.shortest_path(self.net, ip_pkt.src, p[1])
-                        print "Path ", path
+                        #print "Path ", path
                         if (len(path)-1) < hop_num:
                              hop_num = len(path)-1
                              next = path[path.index(dpid) + 1]
@@ -195,7 +194,7 @@ class ShortestRouting(app_manager.RyuApp):
                              best_mcip = str(p[0])
                              out_ip = ip_pkt.src
 
-                print best_mcip
+                #print best_mcip
                 #reply = packet.Packet(data=str(best_mcip))
                 reply = packet.Packet()
                 reply.add_protocol(ethernet.ethernet(dst=eth.src,
@@ -208,7 +207,7 @@ class ShortestRouting(app_manager.RyuApp):
                 reply.add_protocol(udp.udp(src_port=8001, dst_port=8001))
                 reply.add_protocol(str(best_mcip))
                 reply.serialize()
-                print reply
+                #print reply
                 reply.buffer_id = ofproto.OFP_NO_BUFFER
                 data = reply.data
 
