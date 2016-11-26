@@ -1,17 +1,15 @@
 from mininet.topo import Topo
-from mininet.topolib import TreeTopo
-from mininet.topolib import TorusTopo
+from mininet.topo import LinearTopo
 from mininet.net import Mininet
-from mininet.node import CPULimitedHost, RemoteController, OVSSwitch
-from mininet.link import TCLink
+from mininet.node import RemoteController, OVSSwitch
 from mininet.util import dumpNodeConnections
 from mininet.cli  import CLI
+from functools import partial
+
 
 def main():
-    #Tree topology with 7 switches with a depth of 3 and fanout of 2
-    topo = TreeTopo(3,2)
-    #topo = TorusTopo(3,3)
-    #controller=RemoteController('c0', ip='10.10.10.10', port=6633)
+    #linear topology with 7 switches and 1 host per switch
+    topo = LinearTopo(7,1)
     net = Mininet(topo=topo, controller=RemoteController, switch=OVSSwitch)
     net.start()
     print "Dumping host connections"
