@@ -22,9 +22,10 @@ print data
 currentDir = os.getcwd()
 video_path = raw_input("Enter path of video to stream (relative path): ")
 filepath = join(currentDir, video_path)
+rate = raw_input("Enter encoding rate: ")
 
 #command = "vlc-wrapper -vvv %s --sout '#transcode{vcodec=h264,acodec=mpga,ab=128,channels=2,samplerate=44100}:http{mux=ffmpeg{mux=flv},dst='%s':8080/}' --sout-keep"%(filepath, data)
-command = "vlc-wrapper -vvv %s --sout '#transcode{vcodec=h264,acodec=mpga,ab=128,channels=2,samplerate=44100}:rtp{dst='%s',port=5000,mux=ts}' --sout-keep"%(filepath, data)
+command = "vlc-wrapper -vvv %s --sout '#transcode{vcodec=h264,vb=%s,scale=Auto,acodec=mpga,ab=128,channels=2,samplerate=44100}:rtp{dst='%s',port=5000,mux=ts}' --sout-keep"%(filepath, rate, data)
 print command
 
 p = subprocess.Popen(command, shell=True, stderr=subprocess.PIPE)
