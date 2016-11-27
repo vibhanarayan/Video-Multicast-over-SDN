@@ -18,8 +18,9 @@ sock.bind(("",CLIENT_PORT))
 data, address = sock.recvfrom(2048)
 print data
 
+cache_size=raw_input("Enter cache buffer size: ")
 #command = "vlc-wrapper http://%s:8080"%data
-command = "vlc-wrapper rtp://%s:5000"%data
+command = "vlc-wrapper rtp://%s:5000 --network-caching=%s"%(data,cache_size)
 print command
 
 p = subprocess.Popen(command, shell=True, stderr=subprocess.PIPE)
